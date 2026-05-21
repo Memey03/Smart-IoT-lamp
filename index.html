@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart IoT Dashboard</title>
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <!-- MQTT.js -->
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #121212;
+            --card-bg: #1e1e24;
+            --text-main: #f5f5f5;
+            --text-muted: #a0a0a0;
+            --accent-green: #00ff88;
+            --accent-pink: #ff6eb4;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            display: flex;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 800px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #333;
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            color: var(--text-main);
+            font-weight: 800;
+        }
+
+        .status-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 0.9rem;
+        }
+
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background-color: #ff3b30;
+            box-shadow: 0 0 8px transparent;
+            transition: all 0.3s ease;
+        }
+
+        .status-dot.connected {
+            background-color: var(--accent-green);
+            box-shadow: 0 0 8px var(--accent-green);
+        }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+        }
+
+        .card {
+            background-color: var(--card-bg);
+            border-radius: 12px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid #2a2a30;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            text-align: center;
+        }
+
+        .value {
+            font-size: 2.5rem;
+            font-weight: 800;
+            color: var(--accent-green);
+            margin: 10px 0;
+        }
+
+        h3 {
+            font-size: 1rem;
+            color: var(--text-muted);
+            font-weight: 600;
+        }
+
+        .relay-card {
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            justify-content: space-between;
+            background-color: var(--card-bg);
+            border-radius: 12px;
+            padding: 15px 20px;
+            border: 1px solid #2a2a30;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+
+        .relay-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .relay-indicator {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background-color: #333;
+            transition: all 0.3s ease;
+        }
+
+        .relay-indicator.on {
+            background-color: var(--accent-green);
+            box-shadow: 0 0 10px var(--accent-green);
+        }
+
+        button {
+            background-color: #333;
+            color: var(--text-main);
+            border: none;
+            padding: 10px 16px;
+            border-radius: 8px;
+            font-family: inherit;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        button:hover {
+            background-color: #444;
+        }
+
+        button:active {
+            transform: scale(0.95);
+        }
+
+        .btn-pink {
+            background-color: var(--accent-pink);
+            color: #121212;
+        }
+        
+        .btn-pink:hover {
+            background-color: #ff85c2;
+        }
+
+        .controls-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 10px;
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #333;
+        }
+
+        .btn-green {
+            background-color: var(--accent-green);
+            color: #121212;
+        }
+
+        .btn-green:hover {
+            background-color: #33ff99;
+        }
+
+        .last-update {
+            text-align: right;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            margin-top: -10px;
+        }
+
+        @media (max-width: 500px) {
+            .value {
+                font-size: 2rem;
+            }
+            header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 10px;
+            }
+            .relay-card {
+                flex-direction: column;
+                gap: 15px;
+            }
+            .relay-card button {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <header>
+            <h1>Smart IoT Dashboard<span style="color:var(--accent-pink)">.</span></h1>
+            <div class="status-container">
+                <div id="conn-dot" class="status-dot"></div>
+                <span id="conn-text">Connecting...</span>
+            </div>
+        </header>
+
+        <div class="last-update" id="last-update">
+            Terakhir update: --:--:--
+        </div>
+
+        <!-- Sensors -->
+        <div class="dashboard-grid">
+            <div class="card">
+                <h3>Suhu</h3>
+                <div class="value" id="val-suhu">--°C</div>
+            </div>
+            <div class="card">
+                <h3>Kelembapan</h3>
+                <div class="value" id="val-kelembapan">--%</div>
+            </div>
+        </div>
+
+        <!-- Master Controls & Variasi -->
+        <div class="controls-grid">
+            <button class="btn-green" onclick="publishAll('ON')">Semua ON</button>
+            <button class="" onclick="publishAll('OFF')" style="background-color: #333; color: white;">Semua OFF</button>
+            <button class="btn-pink" onclick="publishVariasi('variasi1')">Variasi 1</button>
+            <button class="btn-pink" onclick="publishVariasi('variasi2')">Variasi 2</button>
+            <button onclick="publishVariasi('stop')" style="background-color: #ff3b30; color: white;">Stop Variasi</button>
+        </div>
+
+        <!-- Relays -->
+        <h3 style="margin-top: 10px; color: var(--accent-pink);">Status Lampu</h3>
+        
+        <div class="relay-card">
+            <div class="relay-info">
+                <div class="relay-indicator" id="ind-1"></div>
+                <h3>Lampu 1</h3>
+            </div>
+            <button id="btn-1" class="btn-pink" onclick="toggleRelay(1)">Toggle</button>
+        </div>
+
+        <div class="relay-card">
+            <div class="relay-info">
+                <div class="relay-indicator" id="ind-2"></div>
+                <h3>Lampu 2</h3>
+            </div>
+            <button id="btn-2" class="btn-pink" onclick="toggleRelay(2)">Toggle</button>
+        </div>
+
+        <div class="relay-card">
+            <div class="relay-info">
+                <div class="relay-indicator" id="ind-3"></div>
+                <h3>Lampu 3</h3>
+            </div>
+            <button id="btn-3" class="btn-pink" onclick="toggleRelay(3)">Toggle</button>
+        </div>
+
+        <div class="relay-card">
+            <div class="relay-info">
+                <div class="relay-indicator" id="ind-4"></div>
+                <h3>Lampu 4</h3>
+            </div>
+            <button id="btn-4" class="btn-pink" onclick="toggleRelay(4)">Toggle</button>
+        </div>
+
+    </div>
+
+    <script>
+        const clientId = 'web-dashboard-' + Math.random().toString(16).substr(2, 8);
+        
+        // Pengecekan protocol: HiveMQ free public broker mendukung port 8000 (WS) dan 8884 (WSS)
+        const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+        const port = window.location.protocol === 'https:' ? '8884' : '8000';
+        const brokerUrl = `${protocol}://broker.hivemq.com:${port}/mqtt`;
+
+        let relayState = {
+            1: 'OFF',
+            2: 'OFF',
+            3: 'OFF',
+            4: 'OFF'
+        };
+
+        const options = {
+            keepalive: 60,
+            clientId: clientId,
+            protocolId: 'MQTT',
+            protocolVersion: 4,
+            clean: true,
+            reconnectPeriod: 1000,
+            connectTimeout: 30 * 1000,
+        };
+
+        const mqttClient = mqtt.connect(brokerUrl, options);
+
+        const connDot = document.getElementById('conn-dot');
+        const connText = document.getElementById('conn-text');
+        const lastUpdateText = document.getElementById('last-update');
+
+        function updateTime() {
+            const now = new Date();
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            const seconds = String(now.getSeconds()).padStart(2, '0');
+            lastUpdateText.textContent = `Terakhir update: ${hours}:${minutes}:${seconds}`;
+        }
+
+        mqttClient.on('connect', () => {
+            connDot.classList.add('connected');
+            connText.textContent = 'Connected';
+            connText.style.color = 'var(--accent-green)';
+            
+            // Subscriptions
+            mqttClient.subscribe('home/sensor/suhu');
+            mqttClient.subscribe('home/sensor/kelembapan');
+            for(let i=1; i<=4; i++){
+                mqttClient.subscribe(`home/relay/${i}/status`);
+            }
+        });
+
+        mqttClient.on('error', (err) => {
+            console.error('Connection error: ', err);
+            connDot.classList.remove('connected');
+            connText.textContent = 'Error';
+            connText.style.color = '#ff3b30';
+        });
+
+        mqttClient.on('close', () => {
+             connDot.classList.remove('connected');
+             connText.textContent = 'Disconnected';
+             connText.style.color = '#ff3b30';
+        });
+
+        mqttClient.on('message', (topic, message) => {
+            const payload = message.toString();
+            updateTime();
+
+            if (topic === 'home/sensor/suhu') {
+                document.getElementById('val-suhu').textContent = payload + '°C';
+            } 
+            else if (topic === 'home/sensor/kelembapan') {
+                document.getElementById('val-kelembapan').textContent = payload + '%';
+            }
+            else if (topic.startsWith('home/relay/') && topic.endsWith('/status')) {
+                const parts = topic.split('/');
+                const id = parts[2];
+                if (id >= 1 && id <= 4) {
+                    relayState[id] = payload;
+                    const ind = document.getElementById(`ind-${id}`);
+                    if (payload === 'ON') {
+                        ind.classList.add('on');
+                    } else {
+                        ind.classList.remove('on');
+                    }
+                }
+            }
+        });
+
+        window.toggleRelay = function(id) {
+            const currentState = relayState[id];
+            const newState = currentState === 'ON' ? 'OFF' : 'ON';
+            mqttClient.publish(`home/relay/${id}/set`, newState);
+        }
+
+        window.publishAll = function(state) {
+            for(let i=1; i<=4; i++){
+                mqttClient.publish(`home/relay/${i}/set`, state);
+            }
+        }
+
+        window.publishVariasi = function(cmd) {
+            mqttClient.publish('home/variasi/set', cmd);
+        }
+
+    </script>
+</body>
+</html>
